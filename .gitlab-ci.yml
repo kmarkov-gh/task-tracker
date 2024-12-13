@@ -1,0 +1,114 @@
+stages:
+  - build
+  - test
+  - deploy
+  - lint-html
+  - build-configmap-html
+  - deploy-configmap-html
+
+variables:
+  REGISTRY_URL: "192.168.2.100:5000"
+  IMAGE_NAME: "$REGISTRY_URL/task-tracker"
+  REGISTRY_USER: "admin"
+  REGISTRY_PASSWORD: $REGISTRY_PASSWORD
+  DOCKER_TLS_CERTDIR: ""
+  CONFIGMAP_NAME: "index-html"
+
+.kubectl-template: &kubectl-image
+#&kubectl-image
+  image:
+    name: "bitnami/kubectl:1.29"
+    entrypoint: [""]
+
+services:
+  - name: docker:stable
+    alias: docker
+    command:
+      - "--host=tcp://0.0.0.0:2375"
+
+build:
+  stage: build
+  image: docker:stable
+  before_script:
+    - echo $REGISTRY_PASSWORD | docker login $REGISTRY_URL -u $REGISTRY_USER --password-stdin
+  script:
+    - docker build -t $IMAGE_NAME:$CI_COMMIT_SHA ./application/src
+    - docker tag $IMAGE_NAME:$CI_COMMIT_SHA $IMAGE_NAME:latest
+    - docker push $IMAGE_NAME:$CI_COMMIT_SHA
+    - docker push $IMAGE_NAME:latest
+  rules:
+    - changes:
+        - application/src/**  # Отслеживаем изменения в application/src
+      when: always
+    - when: never  # Отключает выполнение, если изменения отсутствуют
+
+test:
+  stage: test
+  script:
+    - echo "Running tests..."  # Placeholder для тестов
+  dependencies:
+    - build
+  rules:
+    - changes:
+        - application/src/**
+      when: always
+    - when: never
+
+deploy:
+  stage: deploy
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-${CI_COMMIT_SHA}"
+    paths:
+    - .runner-cache/
+  <<: *kubectl-image
+  script:
+    - kubectl config get-contexts
+    - kubectl patch deployment tracker -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"ci-run-id\":\"$CI_PIPELINE_ID\"}}}}}"
+    - kubectl rollout status deployment/tracker
+  dependencies:
+    - test
+  rules:
+    - changes:
+        - application/src/**
+      when: always
+    - when: never
+
+lint-html:
+  stage: lint-html
+  image: node:latest
+  script:
+    - npm install -g htmlhint
+    - htmlhint k8s/nginx/index.html || echo "HTML validation failed."
+  rules:
+    - changes:
+        - k8s/nginx/index.html
+      when: always
+    - when: never
+
+build-configmap-html:
+  stage: build-configmap-html
+#  image: 
+#    name: bitnami/kubectl:1.29
+#    entrypoint: [""]
+  <<: *kubectl-image
+  script:
+    - kubectl create configmap $CONFIGMAP_NAME --from-file=k8s/nginx/index.html -o yaml --dry-run=client | kubectl apply -f -
+  rules:
+    - changes:
+        - k8s/nginx/index.html
+      when: always
+    - when: never
+
+deploy-configmap-html:
+  stage: deploy-configmap-html
+  <<: *kubectl-image
+  script:
+    - kubectl rollout status deployment/static-server
+  dependencies:
+    - build-configmap-html
+  rules:
+    - changes:
+        - k8s/nginx/index.html
+      when: always
+    - when: never
+

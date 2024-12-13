@@ -1,0 +1,86 @@
+#cloud-config
+# See the autoinstall documentation at:
+# https://canonical-subiquity.readthedocs-hosted.com/en/latest/reference/autoinstall-reference.html
+runcmd:
+  - [eval, 'echo $(cat /proc/cmdline) "autoinstall" > /root/cmdline']
+  - [eval, 'mount -n --bind -o ro /root/cmdline /proc/cmdline']
+  - [eval, 'snap restart subiquity.subiquity-server']
+  - [eval, 'snap restart subiquity.subiquity-service']
+
+autoinstall:
+  apt:
+    disable_components: []
+    fallback: offline-install
+    geoip: true
+    mirror-selection:
+      primary:
+      - country-mirror
+      - arches: &id001
+        - amd64
+        - i386
+        uri: http://archive.ubuntu.com/ubuntu/
+      - arches: &id002
+        - s390x
+        - arm64
+        - armhf
+        - powerpc
+        - ppc64el
+        - riscv64
+        uri: http://ports.ubuntu.com/ubuntu-ports
+    preserve_sources_list: false
+    security:
+    - arches: *id001
+      uri: http://security.ubuntu.com/ubuntu/
+    - arches: *id002
+      uri: http://ports.ubuntu.com/ubuntu-ports
+  storage:
+    swap:
+      size: 0
+    layout:
+      name: direct
+  packages:
+    - less
+    - tcpdump
+    - vim
+    - iputils-ping
+    - jq
+  codecs:
+    install: false
+  drivers:
+    install: false
+  identity:
+    hostname: {{ inventory_hostname }}
+    password: $6$UoKCRJ9tzXyoMN$wCC66Mn05EE4X/ISMuhzCvM7A8ps/eC3F7WLh853Pd4PFYOmd.eSFQbTPZBJ.vAK244vr.GAVqfwoYrnBSU5n1 # root
+    realname: kjm
+    username: kjm
+  kernel:
+    package: linux-generic
+  keyboard:
+    layout: us
+    toggle: null
+    variant: ''
+  locale: en_US.UTF-8
+  network:
+    ethernets:
+      enp1s0:
+        addresses:
+        - {{ hostvars[inventory_hostname]['address'] }}/24
+        nameservers:
+          addresses:
+          - 192.168.2.1
+          search: []
+        routes:
+        - to: default
+          via: 192.168.2.1
+    version: 2
+  oem:
+    install: auto
+  source:
+    id: ubuntu-server-minimal
+    search_drivers: false
+  ssh:
+    allow-pw: true
+    authorized-keys: []
+    install-server: true
+  updates: security
+  version: 1

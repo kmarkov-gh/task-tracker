@@ -1,0 +1,227 @@
+- name: Set up Docker Registry with self-signed SSL and authentication
+  hosts: all
+  become: true
+  connection: local
+  vars:
+    registry_port: 5000
+    prefix: /share/registry
+    registry_data_dir: "{{ prefix }}/images"
+    ssl_cert_dir: "{{ prefix }}/ssl"
+    auth_dir: "{{ prefix }}/auth"
+    ssl_cert_file: "{{ ssl_cert_dir }}/registry.crt"
+    ssl_key_file: "{{ ssl_cert_dir }}/registry.key"
+    htpasswd_file: "{{ auth_dir }}/htpasswd"
+    registry_container_name: docker_registry
+    local_cert_file: ./registry.crt
+    local_key_file: ./registry.key
+    san_config_file: san.cnf
+    podman_cert_dir: "/etc/containers/certs.d/192.168.2.100:5000"
+    docker_cert_dir: "/etc/docker/certs.d/192.168.2.100:5000"
+
+  tasks:
+    - name: Ensure the required directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+      loop:
+        - "{{ registry_data_dir }}"
+        - "{{ ssl_cert_dir }}"
+        - "{{ auth_dir }}"
+
+    - name: Check if Podman is installed
+      command: which podman
+      register: podman_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: Check if Docker is installed
+      command: which docker
+      register: docker_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: Check if Docker service is active
+      systemd:
+        name: docker
+        state: started
+      register: docker_service_check
+      ignore_errors: true
+      when: docker_check.rc == 0
+
+    - name: Ensure Podman certificate directory exists
+      file:
+        path: "{{ podman_cert_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+      when: podman_check.rc == 0
+
+    - name: Copy SSL certificate for Podman
+      copy:
+        src: "{{ ssl_cert_file }}"
+        dest: "{{ podman_cert_dir }}/ca.crt"
+        owner: root
+        group: root
+        mode: 0644
+      when: podman_check.rc == 0
+
+    - name: Ensure Docker certificate directory exists
+      file:
+        path: "{{ docker_cert_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+      when: docker_check.rc == 0 and docker_service_check.failed is not defined
+
+    - name: Copy SSL certificate for Docker
+      copy:
+        src: "{{ ssl_cert_file }}"
+        dest: "{{ docker_cert_dir }}/ca.crt"
+        owner: root
+        group: root
+        mode: 0644
+      when: docker_check.rc == 0 and docker_service_check.failed is not defined
+
+    - name: Update trusted certificates for Podman
+      shell: "update-ca-trust"
+      when: podman_check.rc == 0
+
+    - name: Restart Docker service
+      systemd:
+        name: docker
+        state: restarted
+      when: docker_check.rc == 0 and docker_service_check.failed is not defined
+
+    - name: Verify if local certificate and key exist
+      stat:
+        path: "{{ item }}"
+      register: local_files
+      loop:
+        - "{{ local_cert_file }}"
+        - "{{ local_key_file }}"
+
+    - name: Generate certificate and key if missing
+      block:
+        - name: Create SAN configuration file
+          copy:
+            dest: "{{ san_config_file }}"
+            content: |
+              [req]
+              distinguished_name = req_distinguished_name
+              req_extensions = v3_req
+              prompt = no
+
+              [req_distinguished_name]
+              CN = registry.local
+
+              [v3_req]
+              keyUsage = keyEncipherment, dataEncipherment
+              extendedKeyUsage = serverAuth
+              subjectAltName = @alt_names
+
+              [alt_names]
+              IP.1 = {{ ansible_default_ipv4.address }}
+
+        - name: Generate new certificate and key with SAN
+          command: >
+            openssl req -x509 -nodes -newkey rsa:2048
+            -keyout "{{ local_key_file }}"
+            -out "{{ local_cert_file }}"
+            -days 365
+            -config "{{ san_config_file }}"
+            -extensions v3_req
+
+      when: not (local_files.results[0].stat.exists and local_files.results[1].stat.exists)
+
+    - name: Get hash of certificate
+      shell: openssl x509 -noout -modulus -in "{{ local_cert_file }}" | openssl md5
+      register: cert_hash
+
+    - name: Get hash of key
+      shell: openssl rsa -noout -modulus -in "{{ local_key_file }}" | openssl md5
+      register: key_hash
+
+    - name: Regenerate certificate and key if hashes do not match
+      block:
+        - name: Create SAN configuration file (regenerate case)
+          copy:
+            dest: "{{ san_config_file }}"
+            content: |
+              [req]
+              distinguished_name = req_distinguished_name
+              req_extensions = v3_req
+              prompt = no
+
+              [req_distinguished_name]
+              CN = registry.local
+
+              [v3_req]
+              keyUsage = keyEncipherment, dataEncipherment
+              extendedKeyUsage = serverAuth
+              subjectAltName = @alt_names
+
+              [alt_names]
+              IP.1 = {{ ansible_default_ipv4.address }}
+
+        - name: Generate new certificate and key with SAN (hash mismatch case)
+          command: >
+            openssl req -x509 -nodes -newkey rsa:2048
+            -keyout "{{ local_key_file }}"
+            -out "{{ local_cert_file }}"
+            -days 365
+            -config "{{ san_config_file }}"
+
+      when: cert_hash.stdout != key_hash.stdout
+
+    - name: Copy SSL certificate from local directory
+      copy:
+        src: "{{ local_cert_file }}"
+        dest: "{{ ssl_cert_file }}"
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Copy SSL key from local directory
+      copy:
+        src: "{{ local_key_file }}"
+        dest: "{{ ssl_key_file }}"
+        owner: root
+        group: root
+        mode: 0600
+
+    - name: Create htpasswd file if it doesn't exist
+      command: "htpasswd -B -c {{ htpasswd_file }} admin"
+      args:
+        creates: "{{ htpasswd_file }}"
+
+    - name: Start Docker Registry container with authentication
+      docker_container:
+        name: "{{ registry_container_name }}"
+        image: registry:2
+        state: started
+        restart_policy: always
+        ports:
+          - "{{ registry_port }}:5000"
+        volumes:
+          - "{{ registry_data_dir }}:/var/lib/registry"
+          - "{{ ssl_cert_file }}:/certs/registry.crt:ro"
+          - "{{ ssl_key_file }}:/certs/registry.key:ro"
+          - "{{ htpasswd_file }}:/auth/htpasswd:ro"
+        env:
+          REGISTRY_HTTP_ADDR: "0.0.0.0:5000"
+          REGISTRY_HTTP_TLS_CERTIFICATE: "/certs/registry.crt"
+          REGISTRY_HTTP_TLS_KEY: "/certs/registry.key"
+          REGISTRY_AUTH: "htpasswd"
+          REGISTRY_AUTH_HTPASSWD_PATH: "/auth/htpasswd"
+          REGISTRY_AUTH_HTPASSWD_REALM: "Registry Realm"
+
+    - name: Display registry information
+      debug:
+        msg: >
+          Docker Registry is running on https://{{ ansible_default_ipv4.address }}:{{ registry_port }}
+          with data stored in {{ registry_data_dir }} and authentication enabled.

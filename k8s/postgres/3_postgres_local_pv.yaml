@@ -1,0 +1,44 @@
+# postgres-local-pv.yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: persistent-postgres-pv-0
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+    #storageClassName: manual
+  local:
+    path: /mnt/data/persistent-postgres-0
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - k8s-worker-0
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: persistent-postgres-pv-1
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+    #storageClassName: manual
+  local:
+    path: /mnt/data/persistent-postgres-1
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - k8s-worker-1

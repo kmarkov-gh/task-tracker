@@ -1,0 +1,10 @@
+server:
+  persistence:
+    enabled: true
+    size: 10Gi
+extraScrapeConfigs: |
+  - job_name: 'my-application'
+    metrics_path: '/api/metrics'
+    static_configs:
+      - targets:
+          - 'tracker-svc.default.svc.cluster.local:80'

@@ -1,0 +1,41 @@
+---
+- name: Create and configure KVM VM with Ubuntu 22.04 and OpenNebula
+  hosts: all
+  connection: local
+  gather_facts: no
+  vars:
+    cloud_init_file: "/mnt2/kvm/images/cloudinit-user-data-{{ inventory_hostname }}.yaml"
+
+  tasks:
+
+    - name: Create a disk image for the VM
+      ansible.builtin.command: >
+        qemu-img create -f qcow2 /mnt2/kvm/images/{{inventory_hostname}}.qcow2 {{hostvars[inventory_hostname]['disksize']}}
+      args:
+        creates: /mnt2/kvm/images/{{inventory_hostname}}.qcow2
+
+    - name: Render cloud-init user-data file
+      ansible.builtin.template:
+        src: cloudinit-user-data.j2
+        dest: "{{ cloud_init_file }}"
+
+    - name: Define and start the VM using virt-install
+      become: yes
+      ansible.builtin.command: >
+        virt-install
+        --name {{inventory_hostname}}
+        --ram {{hostvars[inventory_hostname]['ram']}}
+        --vcpus {{hostvars[inventory_hostname]['vcpus']}}
+        --os-variant ubuntu22.04
+        --disk path=/mnt2/kvm/images/{{inventory_hostname}}.qcow2,format=qcow2
+        --cdrom /nvme/kvm/images/ubuntu-22.04.5-live-server-amd64.iso
+        --cloud-init user-data="{{cloud_init_file}}"
+        --network bridge=kbenp7s0f0,model=virtio
+        --graphics vnc,listen=0.0.0.0
+        --console pty,target_type=serial
+      args:
+        creates: /etc/libvirt/qemu/{{inventory_hostname}}.xml
+
+    - name: Confirm VM creation
+      debug:
+        msg: "VM successfully created. Use a separate playbook to configure it further."

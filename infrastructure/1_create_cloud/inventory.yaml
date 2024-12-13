@@ -1,0 +1,17 @@
+all:
+  children:
+    fe:
+      hosts:
+        opennebula-fe1:
+          address: 192.168.2.33
+          disksize: "200G"
+          vcpus: "20"
+          ram:  "20480"
+#    # если node отдельно, то раскомментировать
+#    node:
+#      hosts:
+#        opennebula-node1:
+#          address: 192.168.2.33
+#          disksize: "200G"
+#          vcpus: "20"
+#          ram:  "20480"

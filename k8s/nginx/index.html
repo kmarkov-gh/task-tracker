@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Tracker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        #task-container {
+            max-width: 1000px;
+            width: 100%;
+        }
+        #task-form {
+            margin-bottom: 20px;
+        }
+        #tasks {
+            margin-top: 20px;
+        }
+        .task {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+        .task div {
+            margin-bottom: 5px;
+        }
+        .task h4, .task p, .task input {
+            max-width: 100%;
+            width: 100%;
+            line-height: 1.4;
+            box-sizing: border-box;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin: 0;
+        }
+        .task h4, .task p {
+            cursor: pointer;
+            padding: 3px;
+        }
+        .task input {
+            margin: 0;
+            padding: 3px;
+            font-size: inherit;
+            border: 1px solid #ccc;
+        }
+        .task-buttons {
+            display: flex;
+            justify-content: start;
+            gap: 5px;
+        }
+        .task button {
+            width: 80px;
+            padding: 5px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div id="task-container">
+        <h1>Task Tracker</h1>
+
+        <!-- Form for creating a new task -->
+        <div id="task-form">
+            <h3>Create New Task</h3>
+            <input type="text" id="new-title" placeholder="Task Name" required />
+            <input type="text" id="new-description" placeholder="Task Description" />
+            <button onclick="createTask()">Create</button>
+        </div>
+
+        <!-- Task list -->
+        <div id="tasks">
+            <h3>Tasks</h3>
+            <div id="task-list"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = "/api/tasks/";
+
+        let activeTaskId = null; // Track the currently active task for editing
+
+        // Fetch and display tasks
+        async function fetchTasks() {
+            const response = await fetch(API_BASE_URL);
+            if (response.ok) {
+                const tasks = await response.json();
+                const taskList = document.getElementById("task-list");
+                taskList.innerHTML = ""; // Clear current tasks
+                tasks.forEach(task => {
+                    const taskDiv = document.createElement("div");
+                    taskDiv.className = "task";
+                    taskDiv.dataset.taskId = task.id;
+
+                    // Static text with ability to toggle to input
+                    taskDiv.innerHTML = `
+                        <div>
+                            <h4 ondblclick="startEditing(this, 'title')" title="Yo, double-click to jazz this title up!">${task.title}</h4>
+                            <p ondblclick="startEditing(this, 'description')" title="Wanna tweak this? Double-click, buddy!">${task.description}</p>
+                        </div>
+                        <div class="task-buttons">
+                            <button title="Yo! Double-click the name or description to tweak it." onclick="updateTask(${task.id})">Update</button>
+                            <button onclick="deleteTask(${task.id})">Delete</button>
+                        </div>
+                    `;
+                    taskList.appendChild(taskDiv);
+                });
+            } else {
+                alert("Failed to fetch tasks.");
+            }
+        }
+
+        // Start editing a field
+        function startEditing(element, field) {
+            if (activeTaskId !== null) {
+                resetActiveTask();
+            }
+
+            const taskDiv = element.closest(".task");
+            activeTaskId = taskDiv.dataset.taskId;
+
+            const originalValue = element.textContent.trim(); // Сохраняем оригинальное значение
+            const input = document.createElement("input");
+            input.type = "text";
+            input.value = originalValue;
+            input.dataset.originalValue = originalValue; // Сохраняем оригинальное значение в input
+
+            let cancelTriggered = false; // Флаг для предотвращения конфликтов
+
+            input.onblur = () => {
+                if (!cancelTriggered) {
+                    stopEditing(input, element, field); // Сохраняем изменения при потере фокуса
+                }
+            };
+
+            input.onkeydown = (event) => {
+                if (event.key === "Escape") {
+                    cancelTriggered = true;
+                    cancelEditing(input, element); // Отменяем изменения при нажатии Esc
+                } else if (event.key === "Enter") {
+                    input.blur(); // Завершение редактирования при Enter
+                }
+            };
+
+            input.style.width = `${element.offsetWidth}px`; // Подгоняем ширину
+            input.style.fontSize = window.getComputedStyle(element).fontSize;
+
+            element.replaceWith(input);
+            input.focus();
+        }
+
+        // Stop editing and apply changes
+        function stopEditing(input, element, field) {
+            const newValue = input.value.trim();
+            const taskDiv = input.closest(".task");
+
+            // Заменяем input на текстовый элемент с новым значением
+            element.textContent = newValue;
+            input.replaceWith(element);
+
+            // Сохраняем новое значение в dataset для последующего обновления
+            taskDiv.dataset[field] = newValue;
+        }
+
+        // Cancel editing without saving changes
+        function cancelEditing(input, element) {
+            const originalValue = input.dataset.originalValue; // Получаем сохраненное оригинальное значение
+            element.textContent = originalValue; // Восстанавливаем оригинальный текст
+            input.replaceWith(element); // Возвращаем текстовый элемент
+        }
+
+
+        // Reset active task fields
+        function resetActiveTask() {
+            const taskDiv = document.querySelector(`.task[data-task-id="${activeTaskId}"]`);
+            if (taskDiv) {
+                taskDiv.querySelectorAll("input").forEach(input => {
+                    const field = input.dataset.field;
+                    const element = document.createElement(field === "title" ? "h4" : "p");
+                    element.textContent = input.value; // Revert back to original
+                    input.replaceWith(element);
+                });
+            }
+            activeTaskId = null;
+        }
+
+        // Create a new task
+        async function createTask() {
+            const title = document.getElementById("new-title").value;
+            const description = document.getElementById("new-description").value;
+
+            if (!title) {
+                alert("Task Name is required.");
+                return;
+            }
+
+            const response = await fetch(API_BASE_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title, description }),
+            });
+
+            if (response.ok) {
+                document.getElementById("new-title").value = "";
+                document.getElementById("new-description").value = "";
+                fetchTasks(); // Refresh the task list
+            } else {
+                alert("Failed to create task.");
+            }
+        }
+
+        // Update a task
+        async function updateTask(taskId) {
+            const taskDiv = document.querySelector(`.task[data-task-id="${taskId}"]`);
+            const title = taskDiv.dataset.title || taskDiv.querySelector("h4").textContent.trim();
+            const description = taskDiv.dataset.description || taskDiv.querySelector("p").textContent.trim();
+
+            const response = await fetch(`${API_BASE_URL}${taskId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title, description }),
+            });
+
+            if (response.ok) {
+                fetchTasks(); // Refresh the task list
+            } else {
+                alert("Failed to update task.");
+            }
+        }
+
+        // Delete a task
+        async function deleteTask(taskId) {
+            const response = await fetch(`${API_BASE_URL}${taskId}`, {
+                method: "DELETE",
+            });
+
+            if (response.ok) {
+                fetchTasks(); // Refresh the task list
+            } else {
+                alert("Failed to delete task.");
+            }
+        }
+
+        // Fetch tasks on page load
+        fetchTasks();
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,33 @@
+---
+all:
+  vars:
+    ansible_user: root
+    one_version: '6.8'
+    one_pass: XXXXXX
+    ds:
+      mode: ssh
+    # Definition of the OpenNebula virtual network ("admin_net") that will be created for the VMs.
+    vn:
+      frontend_net:
+        managed: true
+        template:
+          VN_MAD: bridge
+          PHYDEV: enp1s0
+          BRIDGE: br0
+          # 	Address range (first IP and size) to assign to the VMs.
+          AR:
+            TYPE: IP4
+            IP: 192.168.0.3
+            SIZE: 48
+          NETWORK_ADDRESS: 192.168.0.0
+          NETWORK_MASK: 255.255.255.0
+          GATEWAY: 192.168.0.1
+          DNS: 1.1.1.1
+
+frontend:
+  hosts:
+    f1: { ansible_host: 192.168.0.2 }
+
+node:
+  hosts:
+    f1: { ansible_host: 192.168.0.2 }
