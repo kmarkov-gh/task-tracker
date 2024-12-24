@@ -7,7 +7,7 @@
 Сервера:
 
 - Два мастер-узла.
-- Два воркер-узла.
+- Два воркер-узла (на одном из которых будет запущен третий экземпляр etcd).
 
 ### Шаг 2: Подготовка локальной машины
 
@@ -23,6 +23,7 @@
    ```
 3. Создайте виртуальное окружение и активируйте его:
    ```bash
+   pip install virtualenv
    virtualenv .
    . bin/activate
    ```
@@ -64,7 +65,9 @@
    ```
 3. Запустите плейбук для установки кластера:
    ```bash
-   ansible-playbook -i inventory.ini cluster.yml
+   cp -pr inventory/sample inventory/mycluster
+   cp inventory.ini inentory/mycluster/
+   ansible-playbook -i inventory/mycluster/inventory.ini cluster.yml
    ```
 
 ### Шаг 2: Проверка установки
