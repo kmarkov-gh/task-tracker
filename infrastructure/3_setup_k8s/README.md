@@ -66,7 +66,7 @@
 3. Запустите плейбук для установки кластера:
    ```bash
    cp -pr inventory/sample inventory/mycluster
-   cp inventory.ini inentory/mycluster/
+   cp inventory.ini inventory/mycluster/
    ansible-playbook -i inventory/mycluster/inventory.ini cluster.yml
    ```
 
