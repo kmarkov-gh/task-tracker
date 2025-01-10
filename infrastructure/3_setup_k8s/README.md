@@ -24,7 +24,7 @@
 3. Создайте виртуальное окружение и активируйте его:
    ```bash
    pip install virtualenv
-   virtualenv .
+   virtualenv -p python3.12 .
    . bin/activate
    ```
 4. Установите Python-зависимости:
